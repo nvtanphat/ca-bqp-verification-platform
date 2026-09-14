@@ -1,0 +1,17 @@
+=== DATA QA & QUALITY ENGINE REPORT (2018 – 2026) ===
+Tổng records         : 2,414
+Approved             : 2,414
+Backlog              : 0
+Conflict keys        : 0
+DQE Gates Status     : PASS
+Inter-Auditor Agree  : 99.96%
+Cohen's Kappa        : 0.9992  (ĐẠT)
+
+Phân bổ nhãn Approved:
+  BCA: 879
+  BQP: 182
+  KHAC: 1,353
+
+Phân bổ Confidence:
+  CAO: 2,335
+  TRUNG_BINH: 79

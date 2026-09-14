@@ -1,0 +1,88 @@
+
+dataset_metadata:
+  version: "v2.5.0"
+  created_date: "2026-09-13 01:53:39"
+  random_seed: 42
+  schema_version: "2026_E2E_BiTemporal_3NF_v2"
+  registry_checksum: "816c16b31d15e521f49abc6249d8bfc628cbc72fc223a2df515c53502ff59e10"
+  coverage_period: "2018 - 2026"
+  administrative_scope: "64 provinces (includes historical Ha Tay)"
+
+statistics:
+  total_units: 2414
+  units_with_valid_to: 51
+  org_type_breakdown:
+    BCA: 879
+    BQP: 182
+    OTHER: 1353
+  total_aliases: 13630
+  alias_per_unit_avg: 5.6
+  total_synthetic_records: 48280
+
+split_strategy: "unit-level (Zero Leakage)"
+split_summary:
+  train:
+    records: 33780
+    total_units: 1689
+    ratio: 70.0%
+  val:
+    records: 7240
+    total_units: 362
+    ratio: 15.0%
+  test:
+    records: 7260
+    total_units: 363
+    ratio: 15.0%
+
+labels:
+  organization_type: [BCA, BQP, OTHER]
+  verification_status: [KHOP_LE, NEED_REVIEW, NOT_FOUND, EXTRACTION_FAILED]
+
+ner_entities:
+  - UNIT_NAME
+  - UNIT_CODE
+  - PERSON_NAME
+
+ner_quality:
+  unit_name_tagged: 48280
+  unit_name_coverage: "100.00%"
+  unit_code_tagged: 12070
+  unit_code_coverage: "25.00%"
+  unit_code_ratio_in_text: 12070
+  person_name_tagged: 43224
+  bio_tags: true
+  bio_tags_present: 48280
+  has_unit_code_in_text_field: true
+  hard_cases_count: 56
+  ocr_noise_injection: true
+  ocr_noise_level: 0.35
+  schema_valid: true
+
+quality_gates:
+  split_strategy: unit-level (no unit appears in 2 splits)
+  min_alias_per_unit: 3
+  min_template_groups_in_test: 4
+  min_org_types_in_test: 3
+  min_unit_code_coverage: "20%"
+  max_unit_name_missing_rate: "1%"
+  registry_version_tracked: true
+  zero_leakage_status: PASS
+  unit_name_missing_rate: "0.00%"
+  dedup_key: "name-only (NOT org_type) - conflict resolved by priority"
+
+artifacts:
+  - master_units.csv
+  - master_units.csv.sha256
+  - unit_aliases.csv
+  - schema/UNITS.csv
+  - schema/UNIT_CODES.csv
+  - schema/UNIT_NAMES.csv
+  - schema/SOURCES.csv
+  - schema/UNIT_EVENTS.csv
+  - synthetic_records.jsonl
+  - train.jsonl
+  - val.jsonl
+  - test.jsonl
+  - hard_cases.jsonl
+  - dataset_manifest.yaml
+  - split_report.txt
