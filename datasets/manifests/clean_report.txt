@@ -1,26 +1,40 @@
 === CLEAN REPORT (2018 – 2026) ===
 Giai đoạn           : 2018 – 2026
-Tổng raw records    : 14,650
-Unique canonical    : 1,633
-Duplicates loại bỏ : 13,017
+Tổng raw records    : 21,196
+Unique canonical    : 2,414
+Duplicates loại bỏ : 18,782
 Xung đột org_type  : 0
 
 Phân bổ org_type:
-  BCA: 746
-  BQP: 172
-  OTHER: 715
+  BCA: 879
+  BQP: 182
+  KHAC: 1353
 
 Phân bổ unit_level (top 10):
-  cap_tinh: 726
-  tinh_dan_su: 389
-  other_dan_su: 252
-  truong_dan_su: 66
-  cap_su_doan_tinh: 64
-  cap_tinh_bien_phong: 41
-  cap_trung_tieu_doan: 37
-  cap_qk_btl: 15
-  cap_bo: 10
-  quan_doan: 9
+  cap_phong: 1637
+  cap_tinh: 438
+  cap_huyen: 103
+  truong_hoc: 72
+  su_doan: 69
+  trung_doan: 42
+  trung_uong: 23
+  cap_bo: 15
+  benh_vien: 10
+  quan_doan: 5
 
 Cảnh báo:
-  [WARN] 2 unit_code bị trùng: ['BQP_F308', 'BQP_F312']
+  [WARN] org_type không hợp lệ: KHAC_BHXH_VN (KHAC)
+  [WARN] org_type không hợp lệ: KHAC_TCHQ_VN (KHAC)
+  [WARN] org_type không hợp lệ: KHAC_TCT_VN (KHAC)
+  [WARN] org_type không hợp lệ: KHAC_KBNN_VN (KHAC)
+  [WARN] org_type không hợp lệ: KHAC_TANDTC (KHAC)
+  [WARN] org_type không hợp lệ: KHAC_VKSNDTC (KHAC)
+  [WARN] org_type không hợp lệ: KHAC_BV_BM (KHAC)
+  [WARN] org_type không hợp lệ: KHAC_BV_CR (KHAC)
+  [WARN] org_type không hợp lệ: KHAC_BV_K (KHAC)
+  [WARN] org_type không hợp lệ: KHAC_DH_BKHN (KHAC)
+  [WARN] org_type không hợp lệ: KHAC_DH_QGHN (KHAC)
+  [WARN] org_type không hợp lệ: KHAC_DH_QGHCM (KHAC)
+  [WARN] org_type không hợp lệ: KHAC_UBND_HN (KHAC)
+  [WARN] org_type không hợp lệ: KHAC_BHXH_HN (KHAC)
+  [WARN] org_type không hợp lệ: KHAC_SYT_HN (KHAC)

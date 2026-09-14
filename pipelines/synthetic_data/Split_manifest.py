@@ -1,5 +1,5 @@
 """
-Split_manifest.py — Phan chia tap & Xuat Manifest (2018 - 2026)
+Phan chia tap & Xuat Manifest (2018 - 2026)
 ========================================================================
 Input:  data_artifacts/synthetic_records.jsonl
         data_artifacts/master_units.csv
@@ -14,7 +14,10 @@ Output:
 """
 import sys
 import os
-# Project root = 2 levels up (pipelines/xxx/ -> pipelines/ -> root)
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
 import pathlib as _pathlib
 _PROJECT_ROOT = str(_pathlib.Path(__file__).resolve().parent.parent.parent)
 if _PROJECT_ROOT not in sys.path:
@@ -29,24 +32,28 @@ from collections import Counter
 
 try:
     from Config import (
-        DIR_ARTIFACTS, DIR_SAMPLES, DIR_MANIFESTS, SEED,
+        DIR_ARTIFACTS, DIR_SAMPLES, DIR_MANIFESTS, DIR_SCHEMA, SEED,
         SPLIT_TRAIN, SPLIT_VAL, SPLIT_TEST,
-        REGISTRY_VERSION, YEAR_START, YEAR_END,
+        REGISTRY_VERSION, SCHEMA_VERSION, YEAR_START, YEAR_END,
     )
 except ImportError:
     DIR_ARTIFACTS    = "./data_artifacts"
+    DIR_SCHEMA       = "./data_artifacts/schema"
     SEED             = 42
     SPLIT_TRAIN      = 0.70
     SPLIT_VAL        = 0.15
     SPLIT_TEST       = 0.15
-    REGISTRY_VERSION = "v2.0.0"
+    REGISTRY_VERSION = "v2.5.0"
+    SCHEMA_VERSION   = "2026_E2E_BiTemporal_3NF_v2"
     YEAR_START       = 2018
     YEAR_END         = 2026
-    DIR_SAMPLES   = \"./datasets/samples\"
-    DIR_MANIFESTS = \"./datasets/manifests\"
+    DIR_SAMPLES   = "./datasets/samples"
+    DIR_MANIFESTS = "./datasets/manifests"
 
 random.seed(SEED)
 os.makedirs(DIR_ARTIFACTS, exist_ok=True)
+os.makedirs(DIR_SAMPLES,   exist_ok=True)
+os.makedirs(DIR_MANIFESTS, exist_ok=True)
 
 # Nguong kiem tra chat luong NER
 MAX_UNIT_NAME_MISSING_RATE = 0.01   # <= 1%
@@ -229,15 +236,12 @@ def create_manifest(
     unit_name_miss_rate = (1 - ner_stats["unit_name_rate"]) * 100
     leakage_status      = "PASS" if not any("LEAK" in i for i in ner_stats.get("issues", [])) else "FAIL"
 
-    return f"""# Dataset Manifest — Auto-generated, DO NOT edit manually
-# Regenerate: python Split_manifest.py
-# Schema: Synthetic v2 (bio_tags, UNIT_CODE entity, has_unit_code_in_text)
-
+    return f"""
 dataset_metadata:
   version: "{REGISTRY_VERSION}"
   created_date: "{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
   random_seed: {SEED}
-  schema_version: "2026_E2E_Schema_v2"
+  schema_version: "{SCHEMA_VERSION}"
   registry_checksum: "{checksum}"
   coverage_period: "{YEAR_START} - {YEAR_END}"
   administrative_scope: "64 provinces (includes historical Ha Tay)"
@@ -248,7 +252,7 @@ statistics:
   org_type_breakdown:
     BCA: {org_cnt.get('BCA', 0)}
     BQP: {org_cnt.get('BQP', 0)}
-    OTHER: {org_cnt.get('OTHER', 0)}
+    OTHER: {org_cnt.get('KHAC', 0)}
   total_aliases: {len(aliases)}
   alias_per_unit_avg: {len(aliases)/len(registry):.1f}
   total_synthetic_records: {total}
@@ -270,7 +274,7 @@ split_summary:
 
 labels:
   organization_type: [BCA, BQP, OTHER]
-  verification_status: [VERIFIED, NEED_REVIEW, NOT_FOUND, EXTRACTION_FAILED]
+  verification_status: [KHOP_LE, NEED_REVIEW, NOT_FOUND, EXTRACTION_FAILED]
 
 ner_entities:
   - UNIT_NAME
@@ -308,6 +312,11 @@ artifacts:
   - master_units.csv
   - master_units.csv.sha256
   - unit_aliases.csv
+  - schema/UNITS.csv
+  - schema/UNIT_CODES.csv
+  - schema/UNIT_NAMES.csv
+  - schema/SOURCES.csv
+  - schema/UNIT_EVENTS.csv
   - synthetic_records.jsonl
   - train.jsonl
   - val.jsonl
@@ -324,10 +333,10 @@ def main() -> None:
     print(f"SPLIT v2 -- PHAN CHIA TAP & MANIFEST ({YEAR_START} - {YEAR_END})")
     print("=" * 65)
 
-    master_path = os.path.join(DIR_ARTIFACTS, "master_units.csv")
-    syn_path    = os.path.join(DIR_ARTIFACTS, "synthetic_records.jsonl")
-    alias_path  = os.path.join(DIR_ARTIFACTS, "unit_aliases.csv")
-    hard_path   = os.path.join(DIR_ARTIFACTS, "hard_cases.jsonl")
+    master_path = os.path.join(DIR_ARTIFACTS, "master_units.csv")       # Input: working artifact
+    syn_path    = os.path.join(DIR_SAMPLES,   "synthetic_records.jsonl") # Input: từ Synthetic.py
+    alias_path  = os.path.join(DIR_ARTIFACTS, "unit_aliases.csv")        # Input: working artifact
+    hard_path   = os.path.join(DIR_SAMPLES,   "hard_cases.jsonl")        # Input: từ Synthetic.py
 
     if not all(os.path.exists(p) for p in [master_path, syn_path, alias_path]):
         print("[ERROR] Thieu artifacts. Hay chay Registy.py, Synthetic.py truoc.")
@@ -340,11 +349,11 @@ def main() -> None:
 
     print(f"[Doc] {len(registry):,} don vi | {len(records):,} records | {hard_cases_count} hard cases")
 
-    # [ADD] Validate NER fields truoc khi split
+    # Validate NER fields truoc khi split
     print("\n[Kiem tra NER schema]")
     field_check = validate_ner_fields(records)
 
-    # [ADD] Tinh NER stats tren toan bo dataset
+    # Tinh NER stats tren toan bo dataset
     print("\n[Tinh NER stats (toan bo dataset)]")
     ner_stats = compute_ner_stats(records)
     print(f"  UNIT_NAME : {ner_stats['unit_name_tagged']:,} / {ner_stats['total']:,} ({ner_stats['unit_name_rate']*100:.2f}%)")
@@ -372,25 +381,31 @@ def main() -> None:
     else:
         print("  ✓ Test set dat chuan da dang (template, org, UNIT_CODE, bio_tags)")
 
-    # Luu
+    # Luu train/val/test → datasets/samples/ va data_artifacts/
     print("\n[Luu files]")
     for name, data in splits.items():
-        path = os.path.join(DIR_ARTIFACTS, f"{name}.jsonl")
+        path = os.path.join(DIR_SAMPLES, f"{name}.jsonl")
         save_jsonl(data, path)
         print(f"  [OK] {name}.jsonl -> {path}")
+        path_art = os.path.join(DIR_ARTIFACTS, f"{name}.jsonl")
+        save_jsonl(data, path_art)
+        print(f"  [OK] {name}.jsonl -> {path_art}")
 
-    # [UPD] Manifest voi ner_quality
+    # Manifest → datasets/manifests/
     manifest = create_manifest(
         registry, alias_path, splits, uid_groups,
         ner_stats, field_check["schema_valid"],
         hard_cases_count,
     )
-    mf_path = os.path.join(DIR_ARTIFACTS, "dataset_manifest.yaml")
+    mf_path = os.path.join(DIR_MANIFESTS, "dataset_manifest.yaml")
     with open(mf_path, "w", encoding="utf-8") as f:
         f.write(manifest)
     print(f"\n[OK] dataset_manifest.yaml -> {mf_path}")
+    mf_path_art = os.path.join(DIR_ARTIFACTS, "dataset_manifest.yaml")
+    with open(mf_path_art, "w", encoding="utf-8") as f:
+        f.write(manifest)
 
-    # [UPD] split_report.txt — them section NER Stats
+    # Split_report.txt → datasets/manifests/
     org_test = Counter(r["ground_truth"]["organization_type"] for r in splits["test"])
     grp_test = Counter(r["ground_truth"]["template_group"]    for r in splits["test"])
     code_test = sum(1 for r in splits["test"] if any(e["label"] == "UNIT_CODE" for e in r.get("entities", [])))
@@ -432,21 +447,34 @@ def main() -> None:
         "",
         f"Test -- UNIT_CODE tagged: {code_test:,} / {len(splits['test']):,} ({code_test/len(splits['test'])*100:.1f}%)",
     ]
-    rpt_path = os.path.join(DIR_ARTIFACTS, "split_report.txt")
+    rpt_path = os.path.join(DIR_MANIFESTS, "split_report.txt")
     with open(rpt_path, "w", encoding="utf-8") as f:
         f.write("\n".join(report))
     print(f"[OK] split_report.txt -> {rpt_path}")
 
-    # Tong ket artifacts
+    # Tong ket
     print("\n" + "=" * 65)
     print("HOAN TAT PIPELINE -- Danh muc artifacts:")
     print("-" * 65)
-    for fname in [
-        "master_units.csv", "master_units.csv.sha256", "unit_aliases.csv",
-        "synthetic_records.jsonl", "train.jsonl", "val.jsonl",
-        "test.jsonl", "hard_cases.jsonl", "dataset_manifest.yaml", "split_report.txt",
-    ]:
-        fpath = os.path.join(DIR_ARTIFACTS, fname)
+    artifact_map = {
+        "master_units.csv"       : DIR_ARTIFACTS,
+        "master_units.csv.sha256": DIR_ARTIFACTS,
+        "unit_aliases.csv"       : DIR_ARTIFACTS,
+        "schema/UNITS.csv"       : DIR_ARTIFACTS,
+        "schema/UNIT_CODES.csv"  : DIR_ARTIFACTS,
+        "schema/UNIT_NAMES.csv"  : DIR_ARTIFACTS,
+        "schema/SOURCES.csv"     : DIR_ARTIFACTS,
+        "schema/UNIT_EVENTS.csv" : DIR_ARTIFACTS,
+        "synthetic_records.jsonl": DIR_SAMPLES,
+        "train.jsonl"            : DIR_SAMPLES,
+        "val.jsonl"              : DIR_SAMPLES,
+        "test.jsonl"             : DIR_SAMPLES,
+        "hard_cases.jsonl"       : DIR_SAMPLES,
+        "dataset_manifest.yaml"  : DIR_MANIFESTS,
+        "split_report.txt"       : DIR_MANIFESTS,
+    }
+    for fname, fdir in artifact_map.items():
+        fpath = os.path.join(fdir, fname)
         if os.path.exists(fpath):
             sz    = os.path.getsize(fpath)
             with open(fpath, encoding="utf-8") as fp:

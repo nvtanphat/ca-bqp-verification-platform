@@ -1,5 +1,5 @@
 """
-Clear.py : Làm sạch & Chuẩn hóa (2018 – 2026)
+Làm sạch & Chuẩn hóa [2018 – 2026]
 =======================================================
 
 Input:  data_raw/raw_ALL_2018_2026.csv  (hoặc raw_2018.csv … raw_2026.csv)
@@ -11,8 +11,11 @@ Output:
 
 """
 import sys
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
 import os
-# Project root = 2 levels up (pipelines/xxx/ -> pipelines/ -> root)
 import pathlib as _pathlib
 _PROJECT_ROOT = str(_pathlib.Path(__file__).resolve().parent.parent.parent)
 if _PROJECT_ROOT not in sys.path:
@@ -25,17 +28,18 @@ from collections import Counter
 from datetime import date
 
 try:
-    from Config import DIR_RAW, DIR_CLEAN, YEAR_START, YEAR_END, ORG_PRIORITY
+    from Config import DIR_RAW, DIR_CLEAN, DIR_MANIFESTS, YEAR_START, YEAR_END, ORG_PRIORITY
 except ImportError:
     DIR_RAW      = "./data_raw"
     DIR_CLEAN    = "./data_clean"
+    DIR_MANIFESTS = "./datasets/manifests"
     YEAR_START   = 2018
     YEAR_END     = 2026
     ORG_PRIORITY = {"BCA": 2, "BQP": 2, "OTHER": 1, "UNKNOWN": 0}
 
-# Import bảng tỉnh/thành để dùng trong infer_unit_level
+# Import bảng tỉnh/thành để dùng trong infer_unit_level và infer_taxonomy
 try:
-    from Crawl import PROVINCE_NAME, PROVINCE_LEGACY, infer_unit_level
+    from Crawl import PROVINCE_NAME, PROVINCE_LEGACY, infer_unit_level, infer_taxonomy
     _CRAWL_AVAILABLE = True
 except ImportError:
     _CRAWL_AVAILABLE = False
@@ -50,7 +54,7 @@ CHAR_MAP = str.maketrans({
     "\u201c": '"',  "\u201d": '"',   # nháy kép
     "\u2013": "-",  "\u2014": "-",   # gạch nối dài
     "\xa0":   " ",                   # non-breaking space
-    "\u200b": "",                    # ★ FIX #4: Zero-Width Space — loại bỏ hoàn toàn
+    "\u200b": "",                    # Zero-Width Space — loại bỏ hoàn toàn
     "\u200c": "",                    # Zero-Width Non-Joiner
     "\u200d": "",                    # Zero-Width Joiner
     "\ufeff": "",                    # BOM
@@ -75,7 +79,7 @@ LOWERCASE_PARTICLES = frozenset([
 
 def smart_title_case(text: str) -> str:
     """
-    Chuyển chuỗi ALL CAPS về dạng Title-case thông minh cho tiếng Việt.
+    Chuyển chuỗi ALL CAPS về dạng Title-case cho tiếng Việt.
     - Từ đầu câu/từ quan trọng: viết hoa chữ đầu.
     - Các hư từ (và, của, tại, về…): giữ lowercase nếu không đứng đầu cụm.
     - Từ viết tắt kỹ thuật (BCA, PC08, UBND): GIỮ NGUYÊN.
@@ -129,13 +133,13 @@ def normalize_name(name: str) -> str:
     1. Loại ký tự tàng hình (ZWS, BOM) và typography
     2. NFC Unicode
     3. Thu gọn khoảng trắng
-    4. Chuẩn hóa khoảng trắng quanh dấu - và /  (FIX #4)
+    4. Chuẩn hóa khoảng trắng quanh dấu - và /
     5. Bỏ dấu câu cuối dòng
-    6. Smart Title-case nếu toàn ALL CAPS  (FIX #3)
+    6. Smart Title-case nếu toàn ALL CAPS
     """
     if not name:
         return ""
-    # Bước 1: ánh xạ ký tự đặc biệt (gồm Zero-Width Space)
+    # Bước 1: ánh xạ ký tự đặc biệt (gồm Zero-Width Space) 
     name = name.translate(CHAR_MAP)
     # Bước 2: NFC
     name = unicodedata.normalize("NFC", name.strip())
@@ -155,7 +159,7 @@ def normalize_name(name: str) -> str:
 
 def normalize_for_dedup(name: str) -> str:
     """
-    Phiên bản chuẩn hóa chỉ dùng để so sánh trùng lặp:
+    Chuẩn hóa chỉ dùng để so sánh trùng lặp:
     lowercase + bỏ dấu + bỏ stop word + chỉ giữ chữ cái/số.
     """
     name = normalize_name(name).lower()
@@ -189,14 +193,14 @@ def assign_unit_code(record: dict) -> dict:
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# 2.3 — DEDUPLICATION (FIX #1 — Khóa dedup chỉ là dedup_key)
+# 2.3 — DEDUPLICATION (Khóa dedup chỉ là dedup_key)
 # ═══════════════════════════════════════════════════════════════════════
 
 def deduplicate(
     records: list[dict],
 ) -> tuple[list[dict], list[dict], list[dict]]:
     """
-    Loại bỏ bản ghi trùng chỉ theo dedup_key (không kèm org_type).
+    Loại bỏ bản ghi trùng theo dedup_key và unit_code.
 
     Xử lý xung đột org_type:
       - Nếu cùng dedup_key có 2 nhãn khác nhau →
@@ -204,22 +208,45 @@ def deduplicate(
       - Ghi toàn bộ xung đột vào conflict_log để QA review.
 
     Theo dõi khoảng năm hoạt động: year_start, year_end (2018-2026).
+    Đồng thời liên kết đơn vị đổi tên theo thời gian (ví dụ Thừa Thiên Huế -> Huế)
+    để không bị trùng lặp unit_code.
 
     Trả về: (unique_records, duplicates_log, conflict_log)
     """
-    seen: dict[str, dict]     = {}  # dedup_key → record tốt nhất
-    duplicates: list[dict]    = []
-    conflict_log: list[dict]  = []
+    seen: dict[str, dict]          = {}  # dedup_key → record tốt nhất
+    code_to_key: dict[str, str]    = {}  # unit_code → dedup_key
+    duplicates: list[dict]         = []
+    conflict_log: list[dict]       = []
 
     for r in records:
         key = r["dedup_key"]
+        code = r.get("unit_code", "")
         raw_year = str(r.get("year", "")).strip()
         record_year = int(raw_year) if raw_year.isdigit() else YEAR_START
+
+        # Nếu mã đơn vị đã xuất hiện trước đó với tên khác (đơn vị đổi tên theo thời gian)
+        if code and code in code_to_key and code_to_key[code] != key:
+            existing_key = code_to_key[code]
+            existing = seen[existing_key]
+            existing["year_start"] = min(existing.get("year_start", record_year), record_year)
+            existing["year_end"]   = max(existing.get("year_end",   record_year), record_year)
+            # Cập nhật tên mới nhất nếu bản ghi mới hơn
+            if record_year >= existing.get("year_end", YEAR_START):
+                existing["canonical_name"] = r["canonical_name"]
+                existing["unit_name_raw"]  = r["unit_name_raw"]
+                existing["dedup_key"]      = key
+                del seen[existing_key]
+                seen[key] = existing
+                code_to_key[code] = key
+            duplicates.append({**r, "dup_reason": "unit_code_evolution_renamed"})
+            continue
 
         if key not in seen:
             r["year_start"] = record_year
             r["year_end"]   = record_year
             seen[key] = r
+            if code:
+                code_to_key[code] = key
         else:
             existing = seen[key]
             # Cập nhật khoảng thời gian hoạt động
@@ -228,7 +255,7 @@ def deduplicate(
             existing["year_end"]   = max(
                 existing.get("year_end",   record_year), record_year)
 
-            # ★ FIX #1: Kiểm tra xung đột org_type
+            # Kiểm tra xung đột org_type
             r_ot  = r.get("organization_type", "OTHER")
             ex_ot = existing.get("organization_type", "OTHER")
             if r_ot != ex_ot:
@@ -253,6 +280,8 @@ def deduplicate(
                     duplicates.append({**existing,
                                        "dup_reason": "conflict_org_type_lower_priority"})
                     seen[key] = r
+                    if code:
+                        code_to_key[code] = key
                     continue
                 else:
                     duplicates.append({**r, "dup_reason": "conflict_org_type_lower_priority"})
@@ -269,6 +298,8 @@ def deduplicate(
                 r["year_start"] = existing["year_start"]
                 r["year_end"]   = existing["year_end"]
                 seen[key] = r
+                if code:
+                    code_to_key[code] = key
             else:
                 duplicates.append({**r, "dup_reason": "duplicate_of_existing"})
 
@@ -350,7 +381,7 @@ def main() -> list[dict]:
         r["dedup_key"]      = normalize_for_dedup(r.get("unit_name_raw", ""))
         r = assign_unit_code(r)
 
-        # Tính lại unit_level từ tên đã chuẩn hóa
+        # Tính lại unit_level và taxonomy 2 trục từ tên đã chuẩn hóa
         p_code = ""
         if _CRAWL_AVAILABLE:
             uc = r.get("unit_code", "")
@@ -358,16 +389,19 @@ def main() -> list[dict]:
             parts = uc.split("_")
             if len(parts) >= 3:
                 p_code = parts[2]
-        r["unit_level"] = (
-            infer_unit_level(r["canonical_name"], r.get("organization_type", "OTHER"), p_code)
-            if _CRAWL_AVAILABLE
-            else r.get("unit_level", "other")
-        )
+            r["unit_level"] = infer_unit_level(r["canonical_name"], r.get("organization_type", "OTHER"), p_code)
+            r["admin_level"], r["org_nature"] = infer_taxonomy(r["canonical_name"], r.get("organization_type", "OTHER"), p_code)
+        else:
+            r["unit_level"]   = r.get("unit_level", "other")
+            r["admin_level"]  = r.get("admin_level", "other")
+            r["org_nature"]   = r.get("org_nature", "other")
+
+        r["source_kind"] = r.get("source_kind", "GOV_OFFICIAL_FRAMEWORK")
         processed.append(r)
 
     print(f"[Normalize] {len(processed):,d} records đã chuẩn hóa (incl. ALL CAPS, ZWS, dấu)")
 
-    # Dedup theo dedup_key (FIX #1)
+    # Dedup theo dedup_key và unit_code
     unique, dups, conflicts = deduplicate(processed)
     print(f"[Dedup]     {len(unique):,d} unique | {len(dups):,d} trùng | {len(conflicts):,d} xung đột org_type")
 
@@ -378,13 +412,13 @@ def main() -> list[dict]:
     if len(warnings) > 10:
         print(f"  ... và {len(warnings) - 10} cảnh báo khác.")
     if not warnings:
-        print("  ✓ Dữ liệu sạch, không phát hiện lỗi cấu trúc")
+        print("  Dữ liệu sạch, không phát hiện lỗi cấu trúc")
 
     # Chuẩn bị cột đầu ra
     out_fields = [
         "unit_code", "canonical_name", "organization_type",
-        "unit_level", "year_start", "year_end",
-        "source_ref", "source_url", "source_type",
+        "unit_level", "admin_level", "org_nature", "year_start", "year_end",
+        "source_ref", "source_url", "source_type", "source_kind",
         "code_source", "crawled_at", "crawl_version",
         "unit_name_raw", "unit_code_raw", "dedup_key",
         # Cột QA — để trống, người QA sẽ điền ở Bước 3
@@ -442,7 +476,7 @@ def main() -> list[dict]:
     if warnings:
         report_lines += ["", "Cảnh báo:"] + [f"  {w}" for w in warnings[:15]]
 
-    rpt_path = os.path.join(DIR_CLEAN, "clean_report.txt")
+    rpt_path = os.path.join(DIR_MANIFESTS, "clean_report.txt")
     with open(rpt_path, "w", encoding="utf-8") as f:
         f.write("\n".join(report_lines))
 
